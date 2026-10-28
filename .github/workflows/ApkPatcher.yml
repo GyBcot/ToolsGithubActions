@@ -1,0 +1,80 @@
+name: ApkPatcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (kosongkan untuk ambil terbaru)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download ApkPatcher.jar
+        run: |
+          wget -q "https://sources-ridwanz.vercel.app/files/ApkPatcher.jar" -O ApkPatcher.jar
+
+      - name: Get Release Info
+        id: release
+        run: |
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+          fi
+          TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .id' | head -1)
+          APK_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .name' | head -1)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download APK from Release
+        run: |
+          mkdir -p input
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "input/${{ steps.release.outputs.apk_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Patch APK
+        run: |
+          INPUT_FILE="${{ steps.release.outputs.apk_name }}"
+          APK_BASENAME=$(basename "$INPUT_FILE" | sed 's/\.\(apk\|apks\)$//')
+          mkdir -p output
+          java -jar ApkPatcher.jar -i "input/${INPUT_FILE}" -ssl -v
+          PATCHED_FILE=$(find input -name "${APK_BASENAME}_Patched.*" | head -1)
+          if [ -z "$PATCHED_FILE" ]; then
+            echo "Patched file not found!"
+            exit 1
+          fi
+          PATCHED_EXT="${PATCHED_FILE##*.}"
+          FINAL_NAME="${APK_BASENAME}_Patched.${PATCHED_EXT}"
+          mv "$PATCHED_FILE" "output/${FINAL_NAME}"
+          echo "patched_name=${FINAL_NAME}" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Patched
+          path: output/${{ env.patched_name }}
+          retention-days: 7
+          
