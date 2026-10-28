@@ -1,0 +1,105 @@
+name: Build JAR
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag source zip (kosongkan untuk ambil terbaru)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Release Info
+        id: release
+        run: |
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+          fi
+          TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .id' | head -1)
+          ZIP_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .name' | head -1)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download Source ZIP from Release
+        run: |
+          mkdir -p source
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "source/${{ steps.release.outputs.zip_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+          cd source
+          unzip -q "${{ steps.release.outputs.zip_name }}"
+          ZIP_BASENAME=$(basename "${{ steps.release.outputs.zip_name }}" .zip)
+          if [ -d "$ZIP_BASENAME" ]; then
+            cp -r "$ZIP_BASENAME/." .
+          else
+            EXTRACTED=$(find . -maxdepth 1 -mindepth 1 -type d | head -1)
+            cp -r "$EXTRACTED/." .
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x source/gradlew
+
+      - name: Build JAR
+        id: build
+        run: |
+          cd source
+          TASKS=$(./gradlew tasks --all 2>/dev/null)
+          if echo "$TASKS" | grep -q "^fatJar"; then
+            ./gradlew fatJar
+            echo "build_type=fatJar" >> $GITHUB_OUTPUT
+          elif echo "$TASKS" | grep -q "^shadowJar"; then
+            ./gradlew shadowJar
+            echo "build_type=shadowJar" >> $GITHUB_OUTPUT
+          else
+            ./gradlew jar
+            echo "build_type=jar" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find and Rename JAR
+        id: jarfile
+        run: |
+          JAR=$(find source/build/libs/ -name "*.jar" ! -name "*-plain.jar" | sort -V | tail -1)
+          if [ -z "$JAR" ]; then
+            JAR=$(find source/build/libs/ -name "*.jar" | sort -V | tail -1)
+          fi
+          ZIP_BASENAME=$(basename "${{ steps.release.outputs.zip_name }}" .zip)
+          JAR_NAME="${ZIP_BASENAME}.jar"
+          mkdir -p hasil
+          cp "$JAR" "hasil/${JAR_NAME}"
+          JAR_SIZE=$(du -sh "hasil/${JAR_NAME}" | cut -f1)
+          echo "jar_path=hasil/${JAR_NAME}" >> $GITHUB_OUTPUT
+          echo "jar_name=${JAR_NAME}" >> $GITHUB_OUTPUT
+          echo "jar_size=${JAR_SIZE}" >> $GITHUB_OUTPUT
+
+      - name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Builded
+          path: ${{ steps.jarfile.outputs.jar_path }}
+          retention-days: 7
+          
