@@ -1,0 +1,85 @@
+name: Decompile APK with JADX
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (kosongkan untuk ambil terbaru)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Get Release Info
+        id: release
+        run: |
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+          fi
+          TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .id' | head -1)
+          APK_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .name' | head -1)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download APK from Release
+        run: |
+          mkdir -p input
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "input/${{ steps.release.outputs.apk_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+
+      - name: Install JADX
+        run: |
+          JADX_VERSION=$(curl -s https://api.github.com/repos/skylot/jadx/releases/latest | jq -r '.tag_name')
+          curl -L -o jadx.zip "https://github.com/skylot/jadx/releases/download/${JADX_VERSION}/jadx-${JADX_VERSION#v}.zip"
+          unzip -q jadx.zip -d jadx
+          chmod +x jadx/bin/jadx
+
+      - name: Decompile APK
+        run: |
+          APK_BASENAME="${{ steps.release.outputs.apk_name }}"
+          APK_BASENAME="${APK_BASENAME%.apks}"
+          APK_BASENAME="${APK_BASENAME%.apk}"
+          mkdir -p "output/${APK_BASENAME}-sources"
+          export JAVA_OPTS="-Xmx6g"
+          jadx/bin/jadx \
+            --output-dir "output/${APK_BASENAME}-sources" \
+            --threads-count 2 \
+            --no-res \
+            "input/${{ steps.release.outputs.apk_name }}" || true
+          echo "output_dir=output/${APK_BASENAME}-sources" >> $GITHUB_ENV
+
+      - name: Move to sources folder
+        run: |
+          mkdir -p sources
+          cp -r "${{ env.output_dir }}/." sources/
+
+      - name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Decompiled
+          path: sources/
+          retention-days: 7
+          
