@@ -1,0 +1,95 @@
+name: Analyze Native Libs with Radare2
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (kosongkan untuk ambil terbaru)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get Release Info
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}")
+          else
+            INPUT_TAG="${{ github.event.inputs.release_tag }}"
+            if [ -z "$INPUT_TAG" ]; then
+              RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+            else
+              RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+            fi
+            TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          fi
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name == "lib.zip") | .id' | head -1)
+          ASSET_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name == "lib.zip") | .name' | head -1)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "asset_name=$ASSET_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download lib.zip from Release
+        run: |
+          mkdir -p input
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "input/lib.zip" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+
+      - name: Extract lib.zip
+        run: |
+          mkdir -p so_files
+          unzip -j "input/lib.zip" "*.so" -d so_files/ || true
+          unzip -j "input/lib.zip" "*/*.so" -d so_files/ || true
+          ls -lh so_files/
+
+      - name: Install Radare2
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y radare2
+
+      - name: Analyze SO files with Radare2
+        run: |
+          mkdir -p output
+          for SO_FILE in so_files/*.so; do
+            [ -f "$SO_FILE" ] || continue
+            BASENAME=$(basename "$SO_FILE" .so)
+            OUT="output/${BASENAME}.txt"
+            echo "=== FILE INFO ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'i' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== IMPORTS ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'ii' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== EXPORTS / SYMBOLS ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'iE' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== STRINGS ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'iz' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== SECTIONS ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'iS' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== LIBRARIES LINKED ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'il' "$SO_FILE" >> "$OUT" 2>/dev/null
+            echo -e "\n=== FUNCTIONS (after auto-analysis) ===" >> "$OUT"
+            r2 -q -e bin.cache=true -c 'aaa; afl' "$SO_FILE" >> "$OUT" 2>/dev/null
+          done
+
+      - name: Upload Artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: lib-analysis-${{ steps.release.outputs.release_tag }}
+          path: output/
+          retention-days: 7
+          
