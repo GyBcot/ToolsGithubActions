@@ -49,12 +49,6 @@ jobs:
           echo "Using build-tools: ${BUILD_TOOLS}"
           echo "Using platform: ${PLATFORM}"
 
-      - name: Download ECJ
-        run: |
-          mkdir -p tools
-          curl -sL "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.33.0/ecj-3.33.0.jar" \
-            -o tools/ecj.jar
-
       - name: Generate Keystore
         run: |
           keytool -genkey -v \
@@ -233,11 +227,9 @@ jobs:
 
       - name: Compile Java
         run: |
-          java -cp tools/ecj.jar \
-            org.eclipse.jdt.internal.compiler.batch.Main \
-            -proc:none -17 \
-            -cp $ANDROID_JAR \
-            -cp gen \
+          javac \
+            --release 8 \
+            -cp $ANDROID_JAR:gen \
             -d bin/classes \
             -sourcepath src \
             $(find src -name "*.java") \
