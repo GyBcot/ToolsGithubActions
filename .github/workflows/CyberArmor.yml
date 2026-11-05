@@ -1,4 +1,4 @@
-name: ApkProtector
+name: CyberArmor
 
 on:
   workflow_dispatch:
