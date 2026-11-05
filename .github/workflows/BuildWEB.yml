@@ -225,7 +225,7 @@ jobs:
             -I $ANDROID_JAR \
             --manifest AndroidManifest.xml \
             --java gen \
-            --asset assets \
+            -A assets \
             compiled_res/*.flat \
             --min-sdk-version 21 \
             --target-sdk-version 36 \
