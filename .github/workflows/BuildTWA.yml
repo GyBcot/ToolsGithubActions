@@ -62,7 +62,7 @@ jobs:
         run: |
           mkdir -p twa-project
           cd twa-project
-          bubblewrap init \
+          yes n | bubblewrap init \
             --manifest "${{ github.event.inputs.website_url }}/manifest.json" \
             --directory . \
             --skipPwaValidation
@@ -162,6 +162,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📁 Langkah Selanjutnya" >> $GITHUB_STEP_SUMMARY
           echo "1. Download **APK** dari Artifacts → install di HP" >> $GITHUB_STEP_SUMMARY
-          echo "2. Download **assetlinks** dari Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "3. Upload ke: \`${{ github.event.inputs.website_url }}/.well-known/assetlinks.json\`" >> $GITHUB_STEP_SUMMARY
-          
