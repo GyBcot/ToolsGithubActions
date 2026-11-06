@@ -67,13 +67,19 @@ jobs:
           git clone https://github.com/GyBcot/ApkProtector
           cd ApkProtector
           echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "rscoders.ndkVersion=27.1.12297006" >> local.properties
+          echo "rscoders.buildToolsVersion=36.1.0" >> local.properties
 
       - name: Setup Android NDK
         run: |
-          echo "y" | $ANDROID_HOME/tools/bin/sdkmanager \
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name "sdkmanager" | head -1)
+          fi
+          echo "y" | "$SDKMANAGER" \
             "ndk;27.1.12297006" \
             "build-tools;36.1.0" \
-            "cmake;3.22.1" || true
+            "cmake;3.22.1"
 
       - name: Build ApkProtector Native Shell
         run: |
@@ -119,4 +125,3 @@ jobs:
           name: ApkProtector
           path: ${{ steps.harden.outputs.hardened_path }}
           retention-days: 7
-          
