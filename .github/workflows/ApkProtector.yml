@@ -69,6 +69,8 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "rscoders.buildToolsVersion=36.0.0" >> local.properties
           echo "rscoders.ndkVersion=27.1.12297006" >> local.properties
+          CMAKE_VER=$(ls "$ANDROID_HOME/cmake" | sort -V | tail -1)
+          echo "Menggunakan CMake: $CMAKE_VER"
 
       - name: Setup Android SDK Tools
         run: |
@@ -89,8 +91,7 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           yes | "$SDKMANAGER" \
             "ndk;27.1.12297006" \
-            "build-tools;36.0.0" \
-            "cmake;3.22.1"
+            "build-tools;36.0.0"
 
       - name: Build ApkProtector Native Shell
         run: |
