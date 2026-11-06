@@ -64,7 +64,7 @@ jobs:
 
       - name: Clone ApkProtector
         run: |
-          git clone https://github.com/KbmnGlntr/ApkProtector
+          git clone https://github.com/GyBcot/ApkProtector
           cd ApkProtector
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
