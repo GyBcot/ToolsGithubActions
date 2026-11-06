@@ -64,7 +64,7 @@ jobs:
 
       - name: Clone CyberArmor
         run: |
-          git clone https://github.com/VexoraWebServices/CyberArmor
+          git clone https://github.com/KbmnGlntr/CyberArmor
           cd CyberArmor
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
