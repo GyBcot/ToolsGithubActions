@@ -64,7 +64,7 @@ jobs:
 
       - name: Clone CyberArmor
         run: |
-          git clone https://github.com/KbmnGlntr/CyberArmor
+          git clone https://github.com/VexoraWebServices/CyberArmor
           cd CyberArmor
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
@@ -109,13 +109,14 @@ jobs:
             --ks-pass @Ridwanz45rs \
             --ks-alias rscoders \
             --protection default
+            --no-secure-screen
           echo "hardened_path=hardened/${HARDENED_NAME}" >> $GITHUB_OUTPUT
           echo "hardened_name=${HARDENED_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ApkProtector
+          name: CyberArmor
           path: ${{ steps.harden.outputs.hardened_path }}
           retention-days: 7
           
