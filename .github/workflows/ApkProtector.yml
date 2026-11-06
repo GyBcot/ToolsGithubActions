@@ -99,12 +99,12 @@ jobs:
           APK_BASENAME=$(basename "${{ steps.release.outputs.apk_name }}" .apk)
           HARDENED_NAME="${APK_BASENAME}_protected.apk"
           mkdir -p hardened
-          ApkProtector/packer-cli/build/install/cyberarmor/bin/cyberarmor \
+          ApkProtector/packer-cli/build/install/rscoders/bin/rscoders \
             -i "input/${{ steps.release.outputs.apk_name }}" \
             -o "hardened/${HARDENED_NAME}" \
             --stub-dex ApkProtector/shell-stub/build/classes.dex \
-            --shell-arm64 ApkProtector/shell-native/build/arm64-v8a/libcyberarmor.so \
-            --shell-arm32 ApkProtector/shell-native/build/armeabi-v7a/libcyberarmor.so \
+            --shell-arm64 ApkProtector/shell-native/build/arm64-v8a/librscoders.so \
+            --shell-arm32 ApkProtector/shell-native/build/armeabi-v7a/librscoders.so \
             --ks rscoders.keystore \
             --ks-pass @Ridwanz45rs \
             --ks-alias rscoders \
