@@ -96,7 +96,7 @@ jobs:
       - name: Harden APK with ApkProtector
         id: harden
         run: |
-            APK_BASENAME=$(basename "${{ steps.release.outputs.apk_name }}" .apk)
+          APK_BASENAME=$(basename "${{ steps.release.outputs.apk_name }}" .apk)
           HARDENED_NAME="${APK_BASENAME}_protected.apk"
           mkdir -p hardened
           ApkProtector/packer-cli/build/install/cyberarmor/bin/cyberarmor \
