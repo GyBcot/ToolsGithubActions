@@ -108,7 +108,7 @@ jobs:
             --ks rscoders.keystore \
             --ks-pass @Ridwanz45rs \
             --ks-alias rscoders \
-            --protection default
+            --protection default \
             --no-secure-screen
           echo "hardened_path=hardened/${HARDENED_NAME}" >> $GITHUB_OUTPUT
           echo "hardened_name=${HARDENED_NAME}" >> $GITHUB_OUTPUT
