@@ -96,20 +96,19 @@ jobs:
       - name: Harden APK with ApkProtector
         id: harden
         run: |
-          APK_BASENAME=$(basename "${{ steps.release.outputs.apk_name }}" .apk)
+            APK_BASENAME=$(basename "${{ steps.release.outputs.apk_name }}" .apk)
           HARDENED_NAME="${APK_BASENAME}_protected.apk"
           mkdir -p hardened
-          ApkProtector/packer-cli/build/install/rscoders/bin/rscoders \
+          ApkProtector/packer-cli/build/install/cyberarmor/bin/cyberarmor \
             -i "input/${{ steps.release.outputs.apk_name }}" \
             -o "hardened/${HARDENED_NAME}" \
-            --stub-dex ApkProtector/shell-stub/build/classes.dex \
-            --shell-arm64 ApkProtector/shell-native/build/arm64-v8a/librscoders.so \
-            --shell-arm32 ApkProtector/shell-native/build/armeabi-v7a/librscoders.so \
+            --stub-dex CyberArmor/shell-stub/build/classes.dex \
+            --shell-arm64 ApkProtector/shell-native/build/arm64-v8a/libcyberarmor.so \
+            --shell-arm32 ApkProtector/shell-native/build/armeabi-v7a/libcyberarmor.so \
             --ks rscoders.keystore \
             --ks-pass @Ridwanz45rs \
             --ks-alias rscoders \
-            --protection default \
-            --no-secure-screen
+            --protection default
           echo "hardened_path=hardened/${HARDENED_NAME}" >> $GITHUB_OUTPUT
           echo "hardened_name=${HARDENED_NAME}" >> $GITHUB_OUTPUT
 
