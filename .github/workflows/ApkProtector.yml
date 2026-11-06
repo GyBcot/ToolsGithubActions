@@ -63,14 +63,10 @@ jobs:
             -keypass @Ridwanz45rs
 
       - name: Clone ApkProtector
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/ApkProtector
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: ApkProtector
-
-      - name: Set local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > ApkProtector/local.properties
+        run: |
+          git clone https://github.com/KbmnGlntr/ApkProtector
+          cd ApkProtector
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Setup Android NDK
         run: |
