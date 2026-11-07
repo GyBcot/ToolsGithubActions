@@ -36,9 +36,12 @@ jobs:
           TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
           ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .id' | head -1)
           APK_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | test("\\.(apk|apks)$")) | .name' | head -1)
+          APK_BASENAME="${APK_NAME%.apks}"
+          APK_BASENAME="${APK_BASENAME%.apk}"
           echo "release_tag=$TAG" >> $GITHUB_OUTPUT
           echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
           echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+          echo "apk_basename=$APK_BASENAME" >> $GITHUB_OUTPUT
 
       - name: Download APK from Release
         run: |
@@ -58,28 +61,26 @@ jobs:
 
       - name: Decompile APK
         run: |
-          APK_BASENAME="${{ steps.release.outputs.apk_name }}"
-          APK_BASENAME="${APK_BASENAME%.apks}"
-          APK_BASENAME="${APK_BASENAME%.apk}"
-          mkdir -p "output/${APK_BASENAME}-sources"
+          OUTPUT_DIR="output/${{ steps.release.outputs.apk_basename }}-sources"
+          mkdir -p "$OUTPUT_DIR"
           export JAVA_OPTS="-Xmx6g"
           jadx/bin/jadx \
-            --output-dir "output/${APK_BASENAME}-sources" \
+            --output-dir "$OUTPUT_DIR" \
             --threads-count 2 \
-            --no-res \
+            --deobf \
+            --deobf-min 3 \
+            --deobf-use-sourcename \
+            --show-bad-code \
+            --comments-level error \
+            --export-gradle \
+            -r \
             "input/${{ steps.release.outputs.apk_name }}" || true
-          echo "output_dir=output/${APK_BASENAME}-sources" >> $GITHUB_ENV
-
-      - name: Move to sources folder
-        run: |
-          mkdir -p sources
-          cp -r "${{ env.output_dir }}/." sources/
+          echo "output_dir=$OUTPUT_DIR" >> $GITHUB_ENV
 
       - name: Upload Artifact
-        id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Decompiled
-          path: sources/
+          name: ${{ steps.release.outputs.apk_basename }}-sources
+          path: ${{ env.output_dir }}/
           retention-days: 7
           
