@@ -7,14 +7,6 @@ on:
         description: 'Release tag source zip (kosongkan untuk ambil terbaru)'
         required: false
         default: ''
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 permissions:
   actions: write
@@ -71,14 +63,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x source/gradlew
 
-      - name: Build APK
+      - name: Build Release APK
         run: |
           cd source
-          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
-            ./gradlew assembleRelease
-          else
-            ./gradlew assembleDebug
-          fi
+          ./gradlew assembleRelease
 
       - name: Generate Keystore
         run: |
@@ -95,19 +83,11 @@ jobs:
       - name: Sign APK
         id: sign
         run: |
-          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          APK=$(find source/app/build/outputs/apk/release/ -name "*.apk" | head -1)
           ZIP_BASENAME=$(basename "${{ steps.release.outputs.zip_name }}" .zip)
-          mkdir -p hasil
-
-          if [ "$BUILD_TYPE" = "release" ]; then
-            APK=$(find source/app/build/outputs/apk/release/ -name "*.apk" | head -1)
-            APK_NAME="${ZIP_BASENAME}_signed.apk"
-          else
-            APK=$(find source/app/build/outputs/apk/debug/ -name "*.apk" | head -1)
-            APK_NAME="${ZIP_BASENAME}_debug_signed.apk"
-          fi
-
+          APK_NAME="${ZIP_BASENAME}_signed.apk"
           BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
+          mkdir -p hasil
           $BUILD_TOOLS/apksigner sign \
             --ks rscoders.keystore \
             --ks-key-alias rscoders \
@@ -115,7 +95,6 @@ jobs:
             --key-pass pass:@Ridwanz45rs \
             --out "hasil/${APK_NAME}" \
             "$APK"
-
           APK_SIZE=$(du -sh "hasil/${APK_NAME}" | cut -f1)
           echo "apk_path=hasil/${APK_NAME}" >> $GITHUB_OUTPUT
           echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
