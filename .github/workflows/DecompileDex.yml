@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag source zip (kosongkan untuk ambil terbaru)'
+        description: 'Release tag (kosongkan untuk ambil terbaru)'
         required: false
         default: ''
 
@@ -42,7 +42,7 @@ jobs:
           echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
           echo "zip_basename=$ZIP_BASENAME" >> $GITHUB_OUTPUT
 
-      - name: Download Source ZIP from Release
+      - name: Download ZIP from Release
         run: |
           mkdir -p input
           curl -L \
@@ -64,13 +64,12 @@ jobs:
         run: |
           OUTPUT_DIR="output/${{ steps.release.outputs.zip_basename }}-sources"
           mkdir -p "$OUTPUT_DIR"
-          DEX_FILES=$(find input/ -name "*.dex" | sort)
+          DEX_FILES=$(find input/ -name "*.dex" | sort | tr '\n' ' ')
           if [ -z "$DEX_FILES" ]; then
             echo "Tidak ada file .dex ditemukan di dalam ZIP!"
             exit 1
           fi
-          echo "DEX files found:"
-          echo "$DEX_FILES"
+          echo "DEX files found: $DEX_FILES"
           export JAVA_OPTS="-Xmx6g"
           jadx/bin/jadx \
             --output-dir "$OUTPUT_DIR" \
