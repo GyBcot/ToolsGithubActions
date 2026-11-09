@@ -1,0 +1,91 @@
+name: DecompileDex
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag source zip (kosongkan untuk ambil terbaru)'
+        required: false
+        default: ''
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Get Release Info
+        id: release
+        run: |
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+          fi
+          TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .id' | head -1)
+          ZIP_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .name' | head -1)
+          ZIP_BASENAME=$(basename "$ZIP_NAME" .zip)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+          echo "zip_basename=$ZIP_BASENAME" >> $GITHUB_OUTPUT
+
+      - name: Download Source ZIP from Release
+        run: |
+          mkdir -p input
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "input/${{ steps.release.outputs.zip_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+          cd input
+          unzip -q "${{ steps.release.outputs.zip_name }}"
+
+      - name: Install JADX
+        run: |
+          JADX_VERSION=$(curl -s https://api.github.com/repos/skylot/jadx/releases/latest | jq -r '.tag_name')
+          curl -L -o jadx.zip "https://github.com/skylot/jadx/releases/download/${JADX_VERSION}/jadx-${JADX_VERSION#v}.zip"
+          unzip -q jadx.zip -d jadx
+          chmod +x jadx/bin/jadx
+
+      - name: Decompile DEX Files
+        run: |
+          OUTPUT_DIR="output/${{ steps.release.outputs.zip_basename }}-sources"
+          mkdir -p "$OUTPUT_DIR"
+          DEX_FILES=$(find input/ -name "*.dex" | sort)
+          if [ -z "$DEX_FILES" ]; then
+            echo "Tidak ada file .dex ditemukan di dalam ZIP!"
+            exit 1
+          fi
+          echo "DEX files found:"
+          echo "$DEX_FILES"
+          export JAVA_OPTS="-Xmx6g"
+          jadx/bin/jadx \
+            --output-dir "$OUTPUT_DIR" \
+            --threads-count 2 \
+            --deobf \
+            --deobf-min 3 \
+            --deobf-use-sourcename \
+            --show-bad-code \
+            --comments-level error \
+            $DEX_FILES || true
+          echo "output_dir=$OUTPUT_DIR" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.zip_basename }}-sources
+          path: ${{ env.output_dir }}/
+          retention-days: 7
