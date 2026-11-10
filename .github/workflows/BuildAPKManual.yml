@@ -84,7 +84,6 @@ jobs:
           javac --release 8 \
             -d source/bin/classes \
             -classpath source/src:source/gen \
-            -bootclasspath $ANDROID_JAR \
             $JAVA_FILES
 
       - name: Convert to DEX
