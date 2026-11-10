@@ -69,12 +69,6 @@ jobs:
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_ENV
           echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-35/android.jar" >> $GITHUB_ENV
 
-      - name: Set up JDK 8
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '8'
-
       - name: Generate R.java
         run: |
           mkdir -p source/gen source/bin/classes source/bin/apk
@@ -87,7 +81,7 @@ jobs:
       - name: Compile Java
         run: |
           JAVA_FILES=$(find source/src source/gen -type f -name "*.java")
-          javac -source 1.8 -target 1.8 \
+          javac --release 8 \
             -d source/bin/classes \
             -classpath source/src:source/gen \
             -bootclasspath $ANDROID_JAR \
