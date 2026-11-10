@@ -105,7 +105,7 @@ jobs:
               android:versionName="${{ github.event.inputs.version_name }}">
               <uses-sdk
                   android:minSdkVersion="21"
-                  android:targetSdkVersion="35" />
+                  android:targetSdkVersion="37" />
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -472,6 +472,16 @@ jobs:
                       public void onProgressChanged(WebView view, int newProgress) {
                           progressBar.setProgress(newProgress);
                       }
+
+                      @Override
+                      public boolean onJsConfirm(WebView view, String url, String message, android.webkit.JsResult result) {
+                          new android.app.AlertDialog.Builder(MainActivity.this)
+                              .setMessage(message)
+                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm())
+                              .setNegativeButton(android.R.string.cancel, (d, w) -> result.cancel())
+                              .show();
+                          return true;
+                      }
                   });
 
                   if (savedInstanceState != null) {
@@ -560,7 +570,7 @@ jobs:
 
           public class SplashActivity extends Activity {
 
-              private static final int SPLASH_DURATION = 2000;
+              private static final int SPLASH_DURATION = 1500;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
@@ -677,3 +687,4 @@ jobs:
           name: ${{ steps.vars.outputs.apk_name }}
           path: ${{ steps.sign.outputs.apk_path }}
           retention-days: 7
+          
