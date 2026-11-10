@@ -64,10 +64,19 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
           yes 2>/dev/null | sdkmanager --licenses || true
-          sdkmanager "platforms;android-23" "build-tools;30.0.3"
+          sdkmanager "platforms;android-21" "build-tools;30.0.3"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_ENV
-          echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-23/android.jar" >> $GITHUB_ENV
+          echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-21/android.jar" >> $GITHUB_ENV
+
+      - name: Patch AndroidManifest for API 21 compatibility
+        run: |
+          sed -i \
+            -e 's/android:networkSecurityConfig="[^"]*"//g' \
+            -e 's/android:usesCleartextTraffic="[^"]*"//g' \
+            source/AndroidManifest.xml
+          echo "Manifest after patch:"
+          cat source/AndroidManifest.xml
 
       - name: Set up JDK 8 (untuk javac)
         uses: actions/setup-java@v5
