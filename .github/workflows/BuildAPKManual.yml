@@ -64,10 +64,10 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
           yes 2>/dev/null | sdkmanager --licenses || true
-          sdkmanager "platforms;android-21" "build-tools;30.0.3"
+          sdkmanager "platforms;android-23" "build-tools;30.0.3"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_ENV
-          echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-21/android.jar" >> $GITHUB_ENV
+          echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-23/android.jar" >> $GITHUB_ENV
 
       - name: Patch AndroidManifest for API 21 compatibility
         run: |
@@ -96,7 +96,7 @@ jobs:
       - name: Compile Java
         run: |
           JAVA_FILES=$(find source/src source/gen -type f -name "*.java")
-          javac -source 1.7 -target 1.7 \
+          javac -source 1.8 -target 1.8 \
             -d source/bin/classes \
             -classpath source/src:source/gen \
             -bootclasspath $ANDROID_JAR \
