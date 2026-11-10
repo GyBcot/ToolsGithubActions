@@ -64,9 +64,9 @@ jobs:
           export ANDROID_HOME=$ANDROID_SDK_ROOT
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
           yes 2>/dev/null | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;30.0.3"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_ENV
+          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/35.0.0" >> $GITHUB_ENV
           echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-35/android.jar" >> $GITHUB_ENV
 
       - name: Set up JDK 8 (untuk javac)
