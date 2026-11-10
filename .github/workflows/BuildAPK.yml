@@ -594,10 +594,11 @@ jobs:
         run: |
           INPUT_ICON="${{ github.event.inputs.icon_url }}"
           if [ -n "$INPUT_ICON" ]; then
-            wget -q -O /tmp/ic_launcher.png "$INPUT_ICON"
+            wget -q -O /tmp/ic_launcher_orig "$INPUT_ICON"
           else
-            wget -q -O /tmp/ic_launcher.png "https://via.placeholder.com/192/${{ github.event.inputs.primary_color }}/FFFFFF?text=APP" || true
+            wget -q -O /tmp/ic_launcher_orig "https://via.placeholder.com/192/${{ github.event.inputs.primary_color }}/FFFFFF?text=APP"
           fi
+          convert /tmp/ic_launcher_orig /tmp/ic_launcher.png
           for DENSITY in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             case $DENSITY in
               mdpi)    SIZE=48  ;;
@@ -607,8 +608,7 @@ jobs:
               xxxhdpi) SIZE=192 ;;
             esac
             convert /tmp/ic_launcher.png -resize ${SIZE}x${SIZE} \
-              source/res/mipmap-${DENSITY}/ic_launcher.png 2>/dev/null || \
-            cp /tmp/ic_launcher.png source/res/mipmap-${DENSITY}/ic_launcher.png
+              source/res/mipmap-${DENSITY}/ic_launcher.png
           done
 
       - name: Decode Keystore
@@ -674,4 +674,3 @@ jobs:
           name: ${{ steps.vars.outputs.apk_name }}
           path: ${{ steps.sign.outputs.apk_path }}
           retention-days: 7
-          
