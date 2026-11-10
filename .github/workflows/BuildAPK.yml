@@ -430,9 +430,12 @@ jobs:
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                              String url = request.getUrl().toString();
-                              if (url.startsWith("https://wa.me") || url.startsWith("https://t.me")) {
-                                  startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                              Uri uri = request.getUrl();
+                              String scheme = uri.getScheme();
+                              if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                                  try {
+                                      startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                                  } catch (Exception e) {}
                                   return true;
                               }
                           }
@@ -441,8 +444,12 @@ jobs:
 
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                          if (url.startsWith("https://wa.me") || url.startsWith("https://t.me")) {
-                              startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                          Uri uri = Uri.parse(url);
+                          String scheme = uri.getScheme();
+                          if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                              try {
+                                  startActivity(new Intent(Intent.ACTION_VIEW, uri));
+                              } catch (Exception e) {}
                               return true;
                           }
                           return false;
@@ -467,10 +474,32 @@ jobs:
                       }
                   });
 
+                  webView.setDownloadListener(new android.webkit.DownloadListener() {
+                      @Override
+                      public void onDownloadStart(String url, String userAgent,
+                              String contentDisposition, String mimeType, long contentLength) {
+                          try {
+                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                              intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                              startActivity(intent);
+                          } catch (Exception e) {}
+                      }
+                  });
+
                   webView.setWebChromeClient(new WebChromeClient() {
                       @Override
                       public void onProgressChanged(WebView view, int newProgress) {
                           progressBar.setProgress(newProgress);
+                      }
+
+                      @Override
+                      public boolean onJsAlert(WebView view, String url, String message, android.webkit.JsResult result) {
+                          new android.app.AlertDialog.Builder(MainActivity.this)
+                              .setMessage(message)
+                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm())
+                              .setCancelable(false)
+                              .show();
+                          return true;
                       }
 
                       @Override
@@ -479,6 +508,21 @@ jobs:
                               .setMessage(message)
                               .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm())
                               .setNegativeButton(android.R.string.cancel, (d, w) -> result.cancel())
+                              .setCancelable(false)
+                              .show();
+                          return true;
+                      }
+
+                      @Override
+                      public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, android.webkit.JsPromptResult result) {
+                          android.widget.EditText input = new android.widget.EditText(MainActivity.this);
+                          input.setText(defaultValue);
+                          new android.app.AlertDialog.Builder(MainActivity.this)
+                              .setMessage(message)
+                              .setView(input)
+                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm(input.getText().toString()))
+                              .setNegativeButton(android.R.string.cancel, (d, w) -> result.cancel())
+                              .setCancelable(false)
                               .show();
                           return true;
                       }
