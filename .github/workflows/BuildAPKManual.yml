@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK Manual
 
 on:
   workflow_dispatch:
@@ -53,11 +53,11 @@ jobs:
             cp -r "$EXTRACTED/." .
           fi
 
-      - name: Set up JDK 8
+      - name: Set up JDK 17 (untuk sdkmanager)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '8'
+          java-version: '17'
 
       - name: Setup Android SDK Build Tools
         run: |
@@ -68,6 +68,12 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_ENV
           echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-19/android.jar" >> $GITHUB_ENV
+
+      - name: Set up JDK 8 (untuk javac)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
 
       - name: Generate R.java
         run: |
