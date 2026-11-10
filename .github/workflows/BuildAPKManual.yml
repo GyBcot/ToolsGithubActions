@@ -83,7 +83,7 @@ jobs:
           JAVA_FILES=$(find source/src source/gen -type f -name "*.java")
           javac --release 8 \
             -d source/bin/classes \
-            -classpath source/src:source/gen \
+            -classpath source/src:source/gen:$ANDROID_JAR \
             $JAVA_FILES
 
       - name: Convert to DEX
