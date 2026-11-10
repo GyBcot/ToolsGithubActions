@@ -1,4 +1,4 @@
-name: Build APK
+name: BuildAPKManual
 
 on:
   workflow_dispatch:
@@ -69,6 +69,10 @@ jobs:
           echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_ENV
           echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-35/android.jar" >> $GITHUB_ENV
 
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > rscoders.keystore
+
       - name: Generate R.java
         run: |
           mkdir -p source/gen source/bin/classes source/bin/apk
@@ -117,18 +121,6 @@ jobs:
             source/bin/apk/unaligned.apk \
             source/bin/apk/aligned.apk
 
-      - name: Generate Keystore
-        run: |
-          keytool -genkey -v \
-            -keystore rscoders.keystore \
-            -alias rscoders \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 36500 \
-            -dname "CN=RidwanzSaputra, OU=RSCoders, O=RSCoders, L=Kebumen, ST=Jawa Tengah, C=ID" \
-            -storepass @Ridwanz45rs \
-            -keypass @Ridwanz45rs
-
       - name: Sign APK
         id: sign
         run: |
@@ -155,3 +147,4 @@ jobs:
           name: Builded
           path: ${{ steps.sign.outputs.apk_path }}
           retention-days: 7
+          
