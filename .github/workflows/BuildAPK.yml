@@ -590,6 +590,9 @@ jobs:
           }
           EOF
 
+      - name: Install ImageMagick
+        run: sudo apt-get install -y imagemagick
+
       - name: Setup Icons
         run: |
           INPUT_ICON="${{ github.event.inputs.icon_url }}"
