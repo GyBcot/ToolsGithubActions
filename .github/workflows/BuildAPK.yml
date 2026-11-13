@@ -3,42 +3,10 @@ name: Build APK
 on:
   workflow_dispatch:
     inputs:
-      app_name:
-        description: 'Nama aplikasi'
-        required: true
-        default: 'RidwanzStores'
-      package_name:
-        description: 'Package name (e.g. com.ridwanz.stores)'
-        required: true
-        default: 'com.ridwanz.stores'
-      website_url:
-        description: 'URL website yang dibuka di WebView'
-        required: true
-        default: 'https://ridwanzstores.biz.id'
-      tagline:
-        description: 'Tagline splash screen'
+      release_tag:
+        description: 'Release tag source zip (kosongkan untuk ambil terbaru)'
         required: false
-        default: 'TOKO DIGITAL TERPERCAYA'
-      version_name:
-        description: 'Version name (e.g. 1.0.0)'
-        required: true
-        default: '1.0.0'
-      version_code:
-        description: 'Version code (e.g. 10)'
-        required: true
-        default: '10'
-      splash_bg:
-        description: 'Warna background splash (hex tanpa #)'
-        required: false
-        default: '0a1628'
-      primary_color:
-        description: 'Warna primary/accent (hex tanpa #)'
-        required: false
-        default: '0d9488'
-      icon_url:
-        description: 'URL icon APK (png/jpg, min 192x192)'
-        required: false
-        default: 'https://cdn-fileups.vercel.app/ldvrxa6w.jpg'
+        default: ''
 
 permissions:
   actions: write
@@ -49,671 +17,69 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Get Release Info
+        id: release
+        run: |
+          INPUT_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$INPUT_TAG" ]; then
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/${INPUT_TAG}")
+          fi
+          TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .id' | head -1)
+          ZIP_NAME=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".zip")) | .name' | head -1)
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "asset_id=$ASSET_ID" >> $GITHUB_OUTPUT
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download Source ZIP from Release
+        run: |
+          mkdir -p source
+          curl -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o "source/${{ steps.release.outputs.zip_name }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/${{ steps.release.outputs.asset_id }}"
+          cd source
+          unzip -q "${{ steps.release.outputs.zip_name }}"
+          ZIP_BASENAME=$(basename "${{ steps.release.outputs.zip_name }}" .zip)
+          if [ -d "$ZIP_BASENAME" ]; then
+            cp -r "$ZIP_BASENAME/." .
+          else
+            EXTRACTED=$(find . -maxdepth 1 -mindepth 1 -type d | head -1)
+            cp -r "$EXTRACTED/." .
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Setup Android SDK Build Tools
+      - name: Grant execute permission for gradlew
+        run: chmod +x source/gradlew
+
+      - name: Build Release APK
         run: |
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
-          yes 2>/dev/null | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;34.0.0"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_ENV
-          echo "ANDROID_JAR=$ANDROID_HOME/platforms/android-35/android.jar" >> $GITHUB_ENV
-
-      - name: Set Variables
-        id: vars
-        run: |
-          PKG="${{ github.event.inputs.package_name }}"
-          PKG_PATH=$(echo "$PKG" | tr '.' '/')
-          echo "pkg_path=$PKG_PATH" >> $GITHUB_OUTPUT
-          APP_SAFE=$(echo "${{ github.event.inputs.app_name }}" | tr ' ' '_')
-          echo "apk_name=${APP_SAFE}_v${{ github.event.inputs.version_name }}_signed.apk" >> $GITHUB_OUTPUT
-
-      - name: Create Source Files
-        run: |
-          PKG="${{ github.event.inputs.package_name }}"
-          PKG_PATH="${{ steps.vars.outputs.pkg_path }}"
-          SPLASH_BG="#${{ github.event.inputs.splash_bg }}"
-          PRIMARY="#${{ github.event.inputs.primary_color }}"
-          PRIMARY_DARK="#${{ github.event.inputs.primary_color }}"
-
-          mkdir -p source/src/${PKG_PATH}
-          mkdir -p source/gen
-          mkdir -p source/bin/classes
-          mkdir -p source/bin/apk
-          mkdir -p source/res/drawable
-          mkdir -p source/res/layout
-          mkdir -p source/res/values
-          mkdir -p source/res/xml
-          mkdir -p source/res/mipmap-hdpi
-          mkdir -p source/res/mipmap-mdpi
-          mkdir -p source/res/mipmap-xhdpi
-          mkdir -p source/res/mipmap-xxhdpi
-          mkdir -p source/res/mipmap-xxxhdpi
-          mkdir -p hasil
-
-          cat > source/AndroidManifest.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="${PKG}"
-              android:versionCode="${{ github.event.inputs.version_code }}"
-              android:versionName="${{ github.event.inputs.version_name }}">
-              <uses-sdk
-                  android:minSdkVersion="21"
-                  android:targetSdkVersion="37" />
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-              <uses-permission android:name="android.permission.WAKE_LOCK" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="@string/app_name"
-                  android:theme="@style/AppTheme"
-                  android:usesCleartextTraffic="true"
-                  android:hardwareAccelerated="true"
-                  android:networkSecurityConfig="@xml/network_security_config">
-                  <activity
-                      android:name=".SplashActivity"
-                      android:theme="@style/SplashTheme"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-                  <activity
-                      android:name=".MainActivity"
-                      android:configChanges="orientation|screenSize|keyboardHidden"
-                      android:windowSoftInputMode="adjustResize"
-                      android:exported="false" />
-              </application>
-          </manifest>
-          EOF
-
-          cat > source/res/drawable/progress_bar.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-              <item android:id="@android:id/background">
-                  <shape><solid android:color="#33FFFFFF" /></shape>
-              </item>
-              <item android:id="@android:id/progress">
-                  <clip><shape><solid android:color="${PRIMARY}" /></shape></clip>
-              </item>
-          </layer-list>
-          EOF
-
-          cat > source/res/layout/activity_main.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:id="@+id/rootLayout"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:background="@color/splash_bg"
-              android:fitsSystemWindows="false">
-              <WebView
-                  android:id="@+id/webView"
-                  android:layout_width="match_parent"
-                  android:layout_height="match_parent"
-                  android:background="@color/splash_bg" />
-              <ProgressBar
-                  android:id="@+id/progressBar"
-                  style="?android:attr/progressBarStyleHorizontal"
-                  android:layout_width="match_parent"
-                  android:layout_height="3dp"
-                  android:layout_gravity="top"
-                  android:progressDrawable="@drawable/progress_bar"
-                  android:visibility="gone"
-                  android:max="100"
-                  android:indeterminate="false" />
-              <LinearLayout
-                  android:id="@+id/noConnectionLayout"
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:layout_gravity="center"
-                  android:orientation="vertical"
-                  android:gravity="center"
-                  android:visibility="gone"
-                  android:padding="32dp">
-                  <TextView
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="Koneksi Terputus"
-                      android:textSize="22sp"
-                      android:textStyle="bold"
-                      android:textColor="#FFFFFF"
-                      android:layout_marginBottom="10dp" />
-                  <TextView
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="Pastikan perangkat kamu terhubung ke internet, lalu coba lagi."
-                      android:textSize="14sp"
-                      android:textColor="#99C9FF"
-                      android:gravity="center"
-                      android:lineSpacingMultiplier="1.4"
-                      android:layout_marginBottom="28dp" />
-                  <Button
-                      android:id="@+id/retryButton"
-                      android:layout_width="wrap_content"
-                      android:layout_height="48dp"
-                      android:text="Coba Lagi"
-                      android:textColor="#FFFFFF"
-                      android:background="@color/primary"
-                      android:paddingLeft="36dp"
-                      android:paddingRight="36dp" />
-              </LinearLayout>
-          </FrameLayout>
-          EOF
-
-          cat > source/res/layout/activity_splash.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent"
-              android:background="@color/splash_bg">
-              <LinearLayout
-                  android:layout_width="wrap_content"
-                  android:layout_height="wrap_content"
-                  android:layout_centerInParent="true"
-                  android:orientation="vertical"
-                  android:gravity="center">
-                  <ImageView
-                      android:id="@+id/splashLogo"
-                      android:layout_width="150dp"
-                      android:layout_height="150dp"
-                      android:src="@mipmap/ic_launcher"
-                      android:scaleType="fitCenter"
-                      android:contentDescription="App Logo"
-                      android:layout_marginBottom="16dp" />
-                  <TextView
-                      android:id="@+id/splashAppName"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="@string/app_name"
-                      android:textSize="30sp"
-                      android:textStyle="bold"
-                      android:textColor="#FFFFFF"
-                      android:layout_marginBottom="6dp" />
-                  <TextView
-                      android:id="@+id/splashTagline"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:text="@string/tagline"
-                      android:textSize="13sp"
-                      android:textColor="#99C9FF" />
-                  <ProgressBar
-                      android:layout_width="32dp"
-                      android:layout_height="32dp"
-                      android:indeterminateTint="#FFFFFF"
-                      android:layout_marginTop="32dp" />
-              </LinearLayout>
-          </RelativeLayout>
-          EOF
-
-          cat > source/res/values/colors.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="splash_bg">${SPLASH_BG}</color>
-              <color name="primary">${PRIMARY}</color>
-              <color name="primary_dark">${PRIMARY_DARK}</color>
-              <color name="white">#FFFFFF</color>
-          </resources>
-          EOF
-
-          cat > source/res/values/strings.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">${{ github.event.inputs.app_name }}</string>
-              <string name="tagline">${{ github.event.inputs.tagline }}</string>
-              <string name="version">Version ${{ github.event.inputs.version_name }}</string>
-          </resources>
-          EOF
-
-          cat > source/res/values/styles.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
-                  <item name="android:windowNoTitle">true</item>
-                  <item name="android:windowActionBar">false</item>
-                  <item name="android:windowFullscreen">false</item>
-                  <item name="android:windowContentOverlay">@null</item>
-                  <item name="android:windowTranslucentStatus">false</item>
-                  <item name="android:windowTranslucentNavigation">false</item>
-                  <item name="android:windowBackground">@color/splash_bg</item>
-              </style>
-              <style name="SplashTheme" parent="android:Theme.Material.Light.NoActionBar">
-                  <item name="android:windowNoTitle">true</item>
-                  <item name="android:windowActionBar">false</item>
-                  <item name="android:windowFullscreen">true</item>
-                  <item name="android:windowContentOverlay">@null</item>
-                  <item name="android:windowBackground">@color/splash_bg</item>
-              </style>
-          </resources>
-          EOF
-
-          DOMAIN=$(echo "${{ github.event.inputs.website_url }}" | sed 's|https\?://||' | sed 's|/.*||')
-          cat > source/res/xml/network_security_config.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-              <base-config cleartextTrafficPermitted="true">
-                  <trust-anchors>
-                      <certificates src="system" />
-                      <certificates src="user" />
-                  </trust-anchors>
-              </base-config>
-              <domain-config cleartextTrafficPermitted="true">
-                  <domain includeSubdomains="true">${DOMAIN}</domain>
-              </domain-config>
-          </network-security-config>
-          EOF
-
-          cat > source/src/${PKG_PATH}/MainActivity.java << EOF
-          package ${PKG};
-
-          import android.app.Activity;
-          import android.content.Context;
-          import android.content.Intent;
-          import android.graphics.Bitmap;
-          import android.net.ConnectivityManager;
-          import android.net.NetworkInfo;
-          import android.net.Uri;
-          import android.os.Build;
-          import android.os.Bundle;
-          import android.view.KeyEvent;
-          import android.view.View;
-          import android.webkit.CookieManager;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebResourceError;
-          import android.webkit.WebResourceRequest;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.widget.Button;
-          import android.widget.LinearLayout;
-          import android.widget.ProgressBar;
-
-          public class MainActivity extends Activity {
-
-              private static final String WEBSITE_URL = "${{ github.event.inputs.website_url }}";
-
-              private WebView webView;
-              private ProgressBar progressBar;
-              private LinearLayout noConnectionLayout;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  getWindow().getDecorView().setSystemUiVisibility(
-                      View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                      View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                      View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                  );
-
-                  if (Build.VERSION.SDK_INT >= 21) {
-                      getWindow().setStatusBarColor(android.graphics.Color.TRANSPARENT);
-                      getWindow().setNavigationBarColor(android.graphics.Color.TRANSPARENT);
-                  }
-
-                  setContentView(R.layout.activity_main);
-
-                  webView = findViewById(R.id.webView);
-                  progressBar = findViewById(R.id.progressBar);
-                  noConnectionLayout = findViewById(R.id.noConnectionLayout);
-                  Button retryButton = findViewById(R.id.retryButton);
-
-                  findViewById(R.id.rootLayout).setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
-                      @Override
-                      public android.view.WindowInsets onApplyWindowInsets(View v, android.view.WindowInsets insets) {
-                          v.setPadding(
-                              insets.getSystemWindowInsetLeft(),
-                              insets.getSystemWindowInsetTop(),
-                              insets.getSystemWindowInsetRight(),
-                              insets.getSystemWindowInsetBottom()
-                          );
-                          return insets;
-                      }
-                  });
-
-                  retryButton.setOnClickListener(new View.OnClickListener() {
-                      @Override
-                      public void onClick(View v) {
-                          loadWebsite();
-                      }
-                  });
-
-                  CookieManager cookieManager = CookieManager.getInstance();
-                  cookieManager.setAcceptCookie(true);
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                      cookieManager.setAcceptThirdPartyCookies(webView, true);
-                  }
-
-                  WebSettings settings = webView.getSettings();
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
-                  settings.setDatabaseEnabled(true);
-                  settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-                  settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  settings.setUseWideViewPort(true);
-                  settings.setLoadWithOverviewMode(true);
-                  settings.setBuiltInZoomControls(false);
-                  settings.setDisplayZoomControls(false);
-                  settings.setSupportZoom(false);
-                  settings.setAllowFileAccess(true);
-                  settings.setAllowContentAccess(true);
-                  settings.setLoadsImagesAutomatically(true);
-                  settings.setMediaPlaybackRequiresUserGesture(false);
-
-                  String ua = "Mozilla/5.0 (Linux; Android " + Build.VERSION.RELEASE + ") AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-                  settings.setUserAgentString(ua);
-
-                  webView.setWebViewClient(new WebViewClient() {
-                      @Override
-                      public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                          progressBar.setVisibility(View.VISIBLE);
-                          noConnectionLayout.setVisibility(View.GONE);
-                          webView.setVisibility(View.VISIBLE);
-                      }
-
-                      @Override
-                      public void onPageFinished(WebView view, String url) {
-                          progressBar.setVisibility(View.GONE);
-                          CookieManager.getInstance().flush();
-                      }
-
-                      @Override
-                      public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                              Uri uri = request.getUrl();
-                              String scheme = uri.getScheme();
-                              if (!"http".equals(scheme) && !"https".equals(scheme)) {
-                                  try {
-                                      startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                                  } catch (Exception e) {}
-                                  return true;
-                              }
-                          }
-                          return false;
-                      }
-
-                      @Override
-                      public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                          Uri uri = Uri.parse(url);
-                          String scheme = uri.getScheme();
-                          if (!"http".equals(scheme) && !"https".equals(scheme)) {
-                              try {
-                                  startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                              } catch (Exception e) {}
-                              return true;
-                          }
-                          return false;
-                      }
-
-                      @Override
-                      public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                              if (request.isForMainFrame()) {
-                                  webView.setVisibility(View.GONE);
-                                  noConnectionLayout.setVisibility(View.VISIBLE);
-                                  progressBar.setVisibility(View.GONE);
-                              }
-                          }
-                      }
-
-                      @Override
-                      public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                          webView.setVisibility(View.GONE);
-                          noConnectionLayout.setVisibility(View.VISIBLE);
-                          progressBar.setVisibility(View.GONE);
-                      }
-                  });
-
-                  webView.setDownloadListener(new android.webkit.DownloadListener() {
-                      @Override
-                      public void onDownloadStart(String url, String userAgent,
-                              String contentDisposition, String mimeType, long contentLength) {
-                          try {
-                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                              intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                              startActivity(intent);
-                          } catch (Exception e) {}
-                      }
-                  });
-
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public void onProgressChanged(WebView view, int newProgress) {
-                          progressBar.setProgress(newProgress);
-                      }
-
-                      @Override
-                      public boolean onJsAlert(WebView view, String url, String message, android.webkit.JsResult result) {
-                          new android.app.AlertDialog.Builder(MainActivity.this)
-                              .setMessage(message)
-                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm())
-                              .setCancelable(false)
-                              .show();
-                          return true;
-                      }
-
-                      @Override
-                      public boolean onJsConfirm(WebView view, String url, String message, android.webkit.JsResult result) {
-                          new android.app.AlertDialog.Builder(MainActivity.this)
-                              .setMessage(message)
-                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm())
-                              .setNegativeButton(android.R.string.cancel, (d, w) -> result.cancel())
-                              .setCancelable(false)
-                              .show();
-                          return true;
-                      }
-
-                      @Override
-                      public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, android.webkit.JsPromptResult result) {
-                          android.widget.EditText input = new android.widget.EditText(MainActivity.this);
-                          input.setText(defaultValue);
-                          new android.app.AlertDialog.Builder(MainActivity.this)
-                              .setMessage(message)
-                              .setView(input)
-                              .setPositiveButton(android.R.string.ok, (d, w) -> result.confirm(input.getText().toString()))
-                              .setNegativeButton(android.R.string.cancel, (d, w) -> result.cancel())
-                              .setCancelable(false)
-                              .show();
-                          return true;
-                      }
-                  });
-
-                  if (savedInstanceState != null) {
-                      webView.restoreState(savedInstanceState);
-                  } else {
-                      loadWebsite();
-                  }
-              }
-
-              private void loadWebsite() {
-                  if (isConnected()) {
-                      noConnectionLayout.setVisibility(View.GONE);
-                      webView.setVisibility(View.VISIBLE);
-                      webView.loadUrl(WEBSITE_URL);
-                  } else {
-                      webView.setVisibility(View.GONE);
-                      noConnectionLayout.setVisibility(View.VISIBLE);
-                  }
-              }
-
-              @SuppressWarnings("deprecation")
-              private boolean isConnected() {
-                  ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-                  if (cm == null) return false;
-                  NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-                  return activeNetwork != null && activeNetwork.isConnected();
-              }
-
-              @Override
-              protected void onSaveInstanceState(Bundle outState) {
-                  super.onSaveInstanceState(outState);
-                  webView.saveState(outState);
-              }
-
-              @Override
-              protected void onPause() {
-                  super.onPause();
-                  webView.onPause();
-                  webView.pauseTimers();
-              }
-
-              @Override
-              protected void onResume() {
-                  super.onResume();
-                  webView.onResume();
-                  webView.resumeTimers();
-              }
-
-              @Override
-              protected void onDestroy() {
-                  if (webView != null) {
-                      webView.clearHistory();
-                      webView.clearCache(true);
-                      webView.loadUrl("about:blank");
-                      webView.onPause();
-                      webView.removeAllViews();
-                      webView.destroyDrawingCache();
-                      webView.destroy();
-                      webView = null;
-                  }
-                  super.onDestroy();
-              }
-
-              @Override
-              public boolean onKeyDown(int keyCode, KeyEvent event) {
-                  if (keyCode == KeyEvent.KEYCODE_BACK && webView != null && webView.canGoBack()) {
-                      webView.goBack();
-                      return true;
-                  }
-                  return super.onKeyDown(keyCode, event);
-              }
-          }
-          EOF
-
-          cat > source/src/${PKG_PATH}/SplashActivity.java << EOF
-          package ${PKG};
-
-          import android.app.Activity;
-          import android.content.Intent;
-          import android.os.Bundle;
-          import android.os.Handler;
-          import android.view.animation.Animation;
-          import android.view.animation.AnimationUtils;
-          import android.widget.ImageView;
-          import android.widget.TextView;
-
-          public class SplashActivity extends Activity {
-
-              private static final int SPLASH_DURATION = 1500;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  setContentView(R.layout.activity_splash);
-
-                  ImageView logo = findViewById(R.id.splashLogo);
-                  TextView appName = findViewById(R.id.splashAppName);
-                  TextView tagline = findViewById(R.id.splashTagline);
-
-                  Animation fadeIn = AnimationUtils.loadAnimation(this, android.R.anim.fade_in);
-                  fadeIn.setDuration(1000);
-
-                  logo.startAnimation(fadeIn);
-                  appName.startAnimation(fadeIn);
-                  tagline.startAnimation(fadeIn);
-
-                  new Handler().postDelayed(new Runnable() {
-                      @Override
-                      public void run() {
-                          startActivity(new Intent(SplashActivity.this, MainActivity.class));
-                          finish();
-                          overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
-                      }
-                  }, SPLASH_DURATION);
-              }
-          }
-          EOF
-
-      - name: Install ImageMagick
-        run: sudo apt-get install -y imagemagick
-
-      - name: Setup Icons
-        run: |
-          INPUT_ICON="${{ github.event.inputs.icon_url }}"
-          if [ -n "$INPUT_ICON" ]; then
-            wget -q -O /tmp/ic_launcher_orig "$INPUT_ICON"
-          else
-            wget -q -O /tmp/ic_launcher_orig "https://via.placeholder.com/192/${{ github.event.inputs.primary_color }}/FFFFFF?text=APP"
-          fi
-          convert /tmp/ic_launcher_orig /tmp/ic_launcher.png
-          for DENSITY in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            case $DENSITY in
-              mdpi)    SIZE=48  ;;
-              hdpi)    SIZE=72  ;;
-              xhdpi)   SIZE=96  ;;
-              xxhdpi)  SIZE=144 ;;
-              xxxhdpi) SIZE=192 ;;
-            esac
-            convert /tmp/ic_launcher.png -resize ${SIZE}x${SIZE} \
-              source/res/mipmap-${DENSITY}/ic_launcher.png
-          done
+          cd source
+          ./gradlew assembleRelease
 
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > rscoders.keystore
 
-      - name: Generate R.java
-        run: |
-          $BUILD_TOOLS/aapt package -f -m \
-            -J source/gen \
-            -M source/AndroidManifest.xml \
-            -S source/res \
-            -I $ANDROID_JAR
-
-      - name: Compile Java
-        run: |
-          JAVA_FILES=$(find source/src source/gen -type f -name "*.java")
-          javac --release 8 \
-            -d source/bin/classes \
-            -classpath source/src:source/gen:$ANDROID_JAR \
-            $JAVA_FILES
-
-      - name: Convert to DEX
-        run: |
-          $BUILD_TOOLS/d8 \
-            $(find source/bin/classes -name "*.class") \
-            --output source/bin/apk/
-
-      - name: Package Resources
-        run: |
-          $BUILD_TOOLS/aapt package -f \
-            -I $ANDROID_JAR \
-            -S source/res \
-            -M source/AndroidManifest.xml \
-            -F source/bin/apk/unaligned.apk
-          cd source/bin/apk
-          $BUILD_TOOLS/aapt add -f unaligned.apk classes.dex
-
-      - name: Zipalign
-        run: |
-          $BUILD_TOOLS/zipalign -f 4 \
-            source/bin/apk/unaligned.apk \
-            source/bin/apk/aligned.apk
-
       - name: Sign APK
         id: sign
         run: |
-          APK_NAME="${{ steps.vars.outputs.apk_name }}"
+          APK=$(find source/app/build/outputs/apk/release/ -name "*.apk" | head -1)
+          ZIP_BASENAME=$(basename "${{ steps.release.outputs.zip_name }}" .zip)
+          APK_NAME="${ZIP_BASENAME}_signed.apk"
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
+          mkdir -p hasil
           $BUILD_TOOLS/apksigner sign \
             --ks rscoders.keystore \
             --ks-key-alias rscoders \
@@ -722,13 +88,16 @@ jobs:
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --out "hasil/${APK_NAME}" \
-            source/bin/apk/aligned.apk
+            "$APK"
+          APK_SIZE=$(du -sh "hasil/${APK_NAME}" | cut -f1)
           echo "apk_path=hasil/${APK_NAME}" >> $GITHUB_OUTPUT
+          echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
+          echo "apk_size=${APK_SIZE}" >> $GITHUB_OUTPUT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.vars.outputs.apk_name }}
+          name: Builded
           path: ${{ steps.sign.outputs.apk_path }}
           retention-days: 7
           
